@@ -1,12 +1,16 @@
 
 from flask import Flask, request, make_response
 import uuid
+import json
 
 app = Flask(__name__)
 
 @app.route('/', methods=['POST'])
 def hello_world():
     app.logger.warning(request.data)
+    event_data = json.loads(request.data)
+    object_key = event_data['Records'][0]['s3']['object']['key']
+    app.logger.warning(object_key)
     # Respond with another event (optional)
     response = make_response({
         "msg": "Hi from helloworld-python app!"
