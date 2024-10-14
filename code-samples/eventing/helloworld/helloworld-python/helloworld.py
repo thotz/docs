@@ -2,6 +2,13 @@
 from flask import Flask, request, make_response
 import uuid
 import json
+from pymilvus import MilvusClient, DataType, Collection, model
+
+client = MilvusClient(
+    uri="http://my-release-milvus.default.svc:19530"
+)
+
+objectlist = []
 
 app = Flask(__name__)
 
@@ -11,6 +18,26 @@ def hello_world():
     event_data = json.loads(request.data)
     object_key = event_data['Records'][0]['s3']['object']['key']
     app.logger.warning(object_key)
+    if client.has_collection(collection_name="demo_collection"):
+        client.drop_collection(collection_name="demo_collection")
+        print("collectiop dropped")
+        client.create_collection(
+            collection_name="demo_collection",
+            dimension=768,  # The vectors we will use in this demo has 768 dimensions
+            )
+        # Load the collection into memory
+    client.load_collection("demo_collection")
+    objectlist.append(object_key)
+
+    embedding_fn = model.DefaultEmbeddingFunction()
+
+    vectors = embedding_fn.encode_documents(objectlist)
+
+    data = [ {"id": 0, "vector": vectors[0], "object_name": object_key} ]
+
+    res = client.insert(collection_name="demo_collection", data=data)
+    print(res)
+
     # Respond with another event (optional)
     response = make_response({
         "msg": "Hi from helloworld-python app!"
