@@ -1,14 +1,28 @@
 
-from flask import Flask, request, make_response
+from flask import Flask, request
 import uuid
 import json
-from pymilvus import MilvusClient, DataType, Collection, model
+import milvus_model
+from pymilvus import MilvusClient, DataType, Collection
+
+import boto3
 
 client = MilvusClient(
     uri="http://my-release-milvus.default.svc:19530"
 )
 
-objectlist = []
+s3 = boto3.client(
+    "s3",
+    aws_access_key_id="SLQ4WM6AFASUJ4PEW2QU",
+    aws_secret_access_key="vfsbYAppm4dAvQMHZPAUAZefOZuatjMhiDT3M4UX",
+    endpoint_url="http://rook-ceph-rgw-my-store.rook-ceph.svc:80",
+    use_ssl=False,
+    verify=False,
+)
+# Store bucket name
+bucket_name = "ceph-bkt-a238d69b-bb95-4687-8ed5-da3039e0177b"
+
+i = 0
 
 app = Flask(__name__)
 
@@ -18,35 +32,35 @@ def hello_world():
     event_data = json.loads(request.data)
     object_key = event_data['Records'][0]['s3']['object']['key']
     app.logger.warning(object_key)
-    if client.has_collection(collection_name="demo_collection"):
-        client.drop_collection(collection_name="demo_collection")
-        print("collectiop dropped")
+    if not client.has_collection(collection_name="demo_collection"):
         client.create_collection(
             collection_name="demo_collection",
             dimension=768,  # The vectors we will use in this demo has 768 dimensions
             )
-        # Load the collection into memory
-    client.load_collection("demo_collection")
-    objectlist.append(object_key)
+    object_data = s3.get_object(Bucket=bucket_name, Key=object_key)
 
-    embedding_fn = model.DefaultEmbeddingFunction()
+    object_content = object_data["Body"].read().decode("utf-8")
+    app.logger.warning(object_content)
+    # Load the collection into memory
+    client.load_collection("demo_collection")
+    objectlist = []
+
+    objectlist.append(object_content)
+
+    embedding_fn = milvus_model.DefaultEmbeddingFunction()
 
     vectors = embedding_fn.encode_documents(objectlist)
 
-    data = [ {"id": 0, "vector": vectors[0], "object_name": object_key} ]
+    app.logger.warning(vectors)
+    global i
+    i = i + 1
+
+    data = [ {"id": i, "vector": vectors[0], "object_name": object_key} ]
 
     res = client.insert(collection_name="demo_collection", data=data)
-    print(res)
+    app.logger.warning(res)
 
-    # Respond with another event (optional)
-    response = make_response({
-        "msg": "Hi from helloworld-python app!"
-    })
-    response.headers["Ce-Id"] = str(uuid.uuid4())
-    response.headers["Ce-specversion"] = "0.3"
-    response.headers["Ce-Source"] = "knative/eventing/samples/hello-world"
-    response.headers["Ce-Type"] = "dev.knative.samples.hifromknative"
-    return response
+    return
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8080)
